@@ -4,6 +4,7 @@ The module houses client to communicate with FCM - Firebase Cloud Messaging (And
 Documentation for google-auth package https://google-auth.readthedocs.io/en/latest/user-guide.html that is used
 to authorize request which is being made to Firebase.
 """
+import asyncio
 import logging
 import typing as t
 import uuid
@@ -433,18 +434,20 @@ class AsyncFirebaseClient:
                 "device tokens."
             )
 
-        message = MulticastMessage(
-            tokens=device_tokens,
-            data=data or {},
-            notification=notification,
-            android=android,
-            webpush=webpush or {},
-            apns=apns,
-        )
-
-        push_notification = self.assemble_push_notification(apns_config=apns, dry_run=dry_run, message=message)
-        response = await self._send_request(push_notification)
-        return response.json()
+        tasks = []
+        for device_token in device_tokens:
+            message = Message(
+                tokens=device_token,
+                data=data or {},
+                notification=notification,
+                android=android,
+                webpush=webpush or {},
+                apns=apns,
+            )
+            push_notification = self.assemble_push_notification(apns_config=apns, dry_run=dry_run, message=message)
+            tasks.append(asyncio.ensure_future(self._send_request(push_notification)))
+        response = await asyncio.gather(*tasks)
+        return response
 
     async def _send_request(self, payload: t.Dict[str, t.Any]) -> httpx.Response:
         """Sends an HTTP call using the ``httpx`` library.
